@@ -1,0 +1,431 @@
+openapi: 3.0.3
+info:
+  title: Multi-Cloud Kubernetes Platform API
+  description: API for managing applications and clusters across multiple cloud providers
+  version: v1alpha1
+  contact:
+    name: Angelo Reyes
+    email: angelonicolas.reyes@gmail.com
+servers:
+  - url: /api/v1
+    description: API base path
+paths:
+  /applications:
+    get:
+      summary: List all applications
+      operationId: listApplications
+      parameters:
+        - name: namespace
+          in: query
+          description: Kubernetes namespace
+          schema:
+            type: string
+            default: default
+        - name: label
+          in: query
+          description: Label selector
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Application'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a new application
+      operationId: createApplication
+      requestBody:
+        description: Application to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Application'
+      responses:
+        '201':
+          description: Application created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /applications/{name}:
+    get:
+      summary: Get application by name
+      operationId: getApplication
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the application
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          description: Kubernetes namespace
+          schema:
+            type: string
+            default: default
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: Update an application
+      operationId: updateApplication
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the application
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          description: Kubernetes namespace
+          schema:
+            type: string
+            default: default
+      requestBody:
+        description: Updated application
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Application'
+      responses:
+        '200':
+          description: Application updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete an application
+      operationId: deleteApplication
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the application
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          description: Kubernetes namespace
+          schema:
+            type: string
+            default: default
+      responses:
+        '204':
+          description: Application deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /clusters:
+    get:
+      summary: List all clusters
+      operationId: listClusters
+      parameters:
+        - name: namespace
+          in: query
+          description: Kubernetes namespace
+          schema:
+            type: string
+            default: default
+        - name: provider
+          in: query
+          description: Filter by cloud provider
+          schema:
+            type: string
+            enum: [aws, gcp, azure]
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Cluster'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a new cluster
+      operationId: createCluster
+      requestBody:
+        description: Cluster to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+      responses:
+        '201':
+          description: Cluster created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  schemas:
+    Application:
+      type: object
+      required:
+        - metadata
+        - spec
+      properties:
+        apiVersion:
+          type: string
+          default: unideploy.ca/v1alpha1
+        kind:
+          type: string
+          default: Application
+        metadata:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+            namespace:
+              type: string
+              default: default
+            labels:
+              type: object
+              additionalProperties:
+                type: string
+            annotations:
+              type: object
+              additionalProperties:
+                type: string
+        spec:
+          type: object
+          required:
+            - image
+          properties:
+            image:
+              type: string
+            replicas:
+              type: integer
+              default: 1
+            resources:
+              type: object
+              properties:
+                cpu:
+                  type: string
+                memory:
+                  type: string
+            ports:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  containerPort:
+                    type: integer
+                  protocol:
+                    type: string
+                    enum: [TCP, UDP]
+            env:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  value:
+                    type: string
+            targetClusters:
+              type: array
+              items:
+                type: string
+        status:
+          type: object
+          properties:
+            conditions:
+              type: array
+              items:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  status:
+                    type: string
+                  message:
+                    type: string
+            deployments:
+              type: array
+              items:
+                type: object
+                properties:
+                  cluster:
+                    type: string
+                  status:
+                    type: string
+                  ready:
+                    type: boolean
+    Cluster:
+      type: object
+      required:
+        - metadata
+        - spec
+      properties:
+        apiVersion:
+          type: string
+          default: unideploy.ca/v1alpha1
+        kind:
+          type: string
+          default: Cluster
+        metadata:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+            namespace:
+              type: string
+              default: default
+            labels:
+              type: object
+              additionalProperties:
+                type: string
+            annotations:
+              type: object
+              additionalProperties:
+                type: string
+        spec:
+          type: object
+          required:
+            - provider
+            - region
+          properties:
+            provider:
+              type: string
+              enum: [aws, gcp, azure]
+            region:
+              type: string
+            version:
+              type: string
+            nodeGroups:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  instanceType:
+                    type: string
+                  minSize:
+                    type: integer
+                  maxSize:
+                    type: integer
+        status:
+          type: object
+          properties:
+            conditions:
+              type: array
+              items:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  status:
+                    type: string
+                  message:
+                    type: string
+            endpoint:
+              type: string
+            status:
+              type: string
+              enum: [Pending, Creating, Running, Failed, Deleting, Deleted]
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        details:
+          type: string
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
