@@ -1,0 +1,60 @@
+flowchart TB
+    User["User/Developer"]
+    CLI["CLI Tool"]
+    Gateway["API Gateway Service"]
+    API["REST API Service"]
+    Auth["Auth Service"]
+    DeploymentSvc["Deployment Service"]
+    MonitoringSvc["Monitoring Service"]
+    ConfigSvc["Configuration Service"]
+    K8sOperator["Kubernetes Operator"]
+    ClusterAPI["Cluster API"]
+    PostgreSQL["PostgreSQL"]
+    MongoDB["MongoDB"]
+
+    subgraph "Control Plane"
+        Gateway
+        API
+        Auth
+        DeploymentSvc
+        MonitoringSvc
+        ConfigSvc
+        K8sOperator
+        ClusterAPI
+    end
+
+    subgraph "AWS Free Tier"
+        AWSEC2["EC2 Instances"]
+        AWSS3["S3 Storage"]
+        AWSRDS["RDS PostgreSQL"]
+    end
+
+    subgraph "GCP Free Tier"
+        GCPGKE["GKE Cluster"]
+    end
+
+    subgraph "Azure Free Tier"
+        AzureACR["Container Registry"]
+    end
+
+    User --> CLI
+    CLI --> Gateway
+    Gateway --> API
+    Gateway --> Auth
+    API --> DeploymentSvc
+    API --> MonitoringSvc
+    API --> ConfigSvc
+
+    DeploymentSvc --> K8sOperator
+    MonitoringSvc --> K8sOperator
+    ConfigSvc --> K8sOperator
+
+    K8sOperator --> ClusterAPI
+    K8sOperator --> MongoDB
+    Auth --> PostgreSQL
+    ConfigSvc --> PostgreSQL
+
+    ClusterAPI --> AWSEC2
+    ClusterAPI --> GCPGKE
+    K8sOperator --> AWSS3
+    PostgreSQL --> AWSRDS
