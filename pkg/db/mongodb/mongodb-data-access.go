@@ -1,56 +1,9 @@
 package mongodb
 
 import (
-	"context"
-	"fmt"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/mongo/readpref"
 	"time"
 )
-
-// Config contains the MongoDB connection parameters
-type Config struct {
-	URI      string
-	Database string
-}
-
-// Client represents a MongoDB client
-type Client struct {
-	client   *mongo.Client
-	database *mongo.Database
-}
-
-// NewClient creates a new MongoDB client
-func NewClient(ctx context.Context, config Config) (*Client, error) {
-	opts := options.Client().ApplyURI(config.URI)
-
-	client, err := mongo.Connect(ctx, opts)
-	if err != nil {
-		return nil, fmt.Errorf("error connecting to MongoDB: %w", err)
-	}
-
-	// Verify the connection
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	if err := client.Ping(ctx, readpref.Primary()); err != nil {
-		return nil, fmt.Errorf("error pinging MongoDB: %w", err)
-	}
-
-	database := client.Database(config.Database)
-
-	return &Client{
-		client:   client,
-		database: database,
-	}, nil
-}
-
-// Close closes the MongoDB connection
-func (c *Client) Close(ctx context.Context) error {
-	return c.client.Disconnect(ctx)
-}
 
 // Application represents an application deployment in the system
 type Application struct {
