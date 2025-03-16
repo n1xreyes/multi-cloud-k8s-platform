@@ -45,7 +45,29 @@ func (r *DeploymentLogRepository) InsertDeploymentLog(ctx context.Context, log *
 }
 
 // GetDeploymentLog retrieves a deployment log by ID
-//func (r *DeploymentLogRepository) GetDeploymentLog(ctx context.Context, id string) (*DeploymentLog, error) {
-//	var deploymentLog DeploymentLog
-//
-//}
+func (r *DeploymentLogRepository) GetDeploymentLog(ctx context.Context, id primitive.ObjectID) (*DeploymentLog, error) {
+	var deploymentLog DeploymentLog
+	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&deploymentLog)
+	return &deploymentLog, err
+}
+
+// DeleteDeploymentLog deletes a deployment log by ID
+func (r *DeploymentLogRepository) DeleteDeploymentLog(ctx context.Context, id primitive.ObjectID) (*mongo.DeleteResult, error) {
+	return r.collection.DeleteOne(ctx, bson.M{"_id": id})
+}
+
+// ListDeploymentLogs fetches all logs
+func (r *DeploymentLogRepository) ListDeploymentLogs(ctx context.Context, filter bson.M) ([]DeploymentLog, error) {
+	cursor, err := r.collection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var logs []DeploymentLog
+	if err = cursor.All(ctx, &logs); err != nil {
+		return nil, err
+	}
+
+	return logs, nil
+}
