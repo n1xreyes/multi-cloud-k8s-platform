@@ -19,7 +19,7 @@ type DeploymentLogRepository struct {
 // NewDeploymentLogRepository initializes a DeploymentLogRepository
 func NewDeploymentLogRepository(client *mongodb.Client) *DeploymentLogRepository {
 	return &DeploymentLogRepository{
-		collection: client.Database.Collection("clusters"),
+		collection: client.Database.Collection("deploymentLogs"),
 	}
 }
 
