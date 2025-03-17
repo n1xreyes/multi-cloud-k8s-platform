@@ -22,7 +22,7 @@ type Config struct {
 	Database string
 }
 
-// Initializes a MongoDB client with connection pooling and monitoring
+// NewClient initializes a MongoDB client with connection pooling and monitoring
 func NewClient(ctx context.Context, config Config) (*Client, error) {
 	opts := options.Client().
 		ApplyURI(config.URI).
