@@ -1,8 +1,10 @@
-package mongodb
+package repository
 
 import (
 	"context"
 	"fmt"
+	"github.com/n1xreyes/multi-cloud-k8s-platform/pkg/db/mongodb"
+	"github.com/n1xreyes/multi-cloud-k8s-platform/pkg/db/mongodb/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,14 +17,14 @@ type ApplicationRepository struct {
 }
 
 // NewApplicationRepository initializes an ApplicationRepository
-func NewApplicationRepository(client *Client) *ApplicationRepository {
+func NewApplicationRepository(client *mongodb.Client) *ApplicationRepository {
 	return &ApplicationRepository{
-		collection: client.database.Collection("applications"),
+		collection: client.Database.Collection("applications"),
 	}
 }
 
 // InsertApplication adds a new application
-func (r *ApplicationRepository) InsertApplication(ctx context.Context, app *Application) (*mongo.InsertOneResult, error) {
+func (r *ApplicationRepository) InsertApplication(ctx context.Context, app *models.Application) (*mongo.InsertOneResult, error) {
 	// Validation: Ensure required fields are set
 	if app.Name == "" || app.Namespace == "" {
 		return nil, fmt.Errorf("missing required fields: Name and Namespace are required")
@@ -43,10 +45,10 @@ func (r *ApplicationRepository) InsertApplication(ctx context.Context, app *Appl
 		app.Spec.TargetClusters = []string{}
 	}
 	if app.Status.Conditions == nil {
-		app.Status.Conditions = []ApplicationCondition{}
+		app.Status.Conditions = []models.ApplicationCondition{}
 	}
 	if app.Status.Deployments == nil {
-		app.Status.Deployments = []DeploymentStatus{}
+		app.Status.Deployments = []models.DeploymentStatus{}
 	}
 
 	// Insert the document
@@ -54,8 +56,8 @@ func (r *ApplicationRepository) InsertApplication(ctx context.Context, app *Appl
 }
 
 // GetApplication retrieves an application by ID
-func (r *ApplicationRepository) GetApplication(ctx context.Context, id primitive.ObjectID) (*Application, error) {
-	var app Application
+func (r *ApplicationRepository) GetApplication(ctx context.Context, id primitive.ObjectID) (*models.Application, error) {
+	var app models.Application
 	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&app)
 	return &app, err
 }
@@ -63,7 +65,7 @@ func (r *ApplicationRepository) GetApplication(ctx context.Context, id primitive
 // UpdateApplication updates an application
 func (r *ApplicationRepository) UpdateApplication(ctx context.Context, id primitive.ObjectID, update bson.M) (*mongo.UpdateResult, error) {
 	// Fetch the current application to preserve existing values
-	var existingApp Application
+	var existingApp models.Application
 	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&existingApp)
 	if err != nil {
 		return nil, fmt.Errorf("application not found")
@@ -125,14 +127,14 @@ func (r *ApplicationRepository) DeleteApplication(ctx context.Context, id primit
 }
 
 // ListApplications fetches all applications
-func (r *ApplicationRepository) ListApplications(ctx context.Context, filter bson.M) ([]Application, error) {
+func (r *ApplicationRepository) ListApplications(ctx context.Context, filter bson.M) ([]models.Application, error) {
 	cursor, err := r.collection.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
-	var apps []Application
+	var apps []models.Application
 	if err = cursor.All(ctx, &apps); err != nil {
 		return nil, err
 	}

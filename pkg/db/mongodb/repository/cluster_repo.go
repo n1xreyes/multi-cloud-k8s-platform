@@ -1,8 +1,10 @@
-package mongodb
+package repository
 
 import (
 	"context"
 	"fmt"
+	"github.com/n1xreyes/multi-cloud-k8s-platform/pkg/db/mongodb"
+	"github.com/n1xreyes/multi-cloud-k8s-platform/pkg/db/mongodb/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,14 +17,14 @@ type ClusterRepository struct {
 }
 
 // NewClusterRepository initializes a ClusterRepository
-func NewClusterRepository(client *Client) *ClusterRepository {
+func NewClusterRepository(client *mongodb.Client) *ClusterRepository {
 	return &ClusterRepository{
-		collection: client.database.Collection("clusters"),
+		collection: client.Database.Collection("clusters"),
 	}
 }
 
 // InsertCluster adds a new cluster
-func (r *ClusterRepository) InsertCluster(ctx context.Context, cluster *Cluster) (*mongo.InsertOneResult, error) {
+func (r *ClusterRepository) InsertCluster(ctx context.Context, cluster *models.Cluster) (*mongo.InsertOneResult, error) {
 	// Validate required fields
 	if cluster.Name == "" || cluster.Namespace == "" {
 		return nil, fmt.Errorf("missing required fields: Name and Namespace are required")
@@ -39,16 +41,16 @@ func (r *ClusterRepository) InsertCluster(ctx context.Context, cluster *Cluster)
 
 	// Initialize nested fields to prevent nil values
 	if cluster.Spec.NodeGroups == nil {
-		cluster.Spec.NodeGroups = []NodeGroup{}
+		cluster.Spec.NodeGroups = []models.NodeGroup{}
 	}
 	if cluster.Spec.Networking == nil {
-		cluster.Spec.Networking = &Networking{}
+		cluster.Spec.Networking = &models.Networking{}
 	}
 	if cluster.Spec.Authentication == nil {
-		cluster.Spec.Authentication = &Authentication{}
+		cluster.Spec.Authentication = &models.Authentication{}
 	}
 	if cluster.Status.Conditions == nil {
-		cluster.Status.Conditions = []ClusterCondition{}
+		cluster.Status.Conditions = []models.ClusterCondition{}
 	}
 
 	// Insert into MongoDB
@@ -56,8 +58,8 @@ func (r *ClusterRepository) InsertCluster(ctx context.Context, cluster *Cluster)
 }
 
 // GetCluster retrieves a cluster by ID
-func (r *ClusterRepository) GetCluster(ctx context.Context, id primitive.ObjectID) (*Cluster, error) {
-	var cluster Cluster
+func (r *ClusterRepository) GetCluster(ctx context.Context, id primitive.ObjectID) (*models.Cluster, error) {
+	var cluster models.Cluster
 	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&cluster)
 	return &cluster, err
 }
@@ -65,7 +67,7 @@ func (r *ClusterRepository) GetCluster(ctx context.Context, id primitive.ObjectI
 // UpdateCluster updates a cluster
 func (r *ClusterRepository) UpdateCluster(ctx context.Context, id primitive.ObjectID, update bson.M) (*mongo.UpdateResult, error) {
 	// Fetch existing cluster
-	var existingCluster Cluster
+	var existingCluster models.Cluster
 	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&existingCluster)
 	if err != nil {
 		return nil, fmt.Errorf("cluster not found")

@@ -12,7 +12,7 @@ import (
 // Client wraps the MongoDB client and database
 type Client struct {
 	client   *mongo.Client
-	database *mongo.Database
+	Database *mongo.Database
 }
 
 // Config contains MongoDB connection parameters
@@ -37,7 +37,7 @@ func NewClient(ctx context.Context, config Config) (*Client, error) {
 
 	return &Client{
 		client:   client,
-		database: client.Database(config.Database),
+		Database: client.Database(config.Database),
 	}, nil
 }
 
