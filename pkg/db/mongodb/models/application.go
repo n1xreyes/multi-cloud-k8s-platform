@@ -1,25 +1,37 @@
 package models
 
 import (
+	"errors"
+	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"time"
+)
+
+// Use a single instance of Validate, it caches struct info
+var appValidate *validator.Validate
+
+// Common validation errors
+var (
+	ErrEmptyAppName  = errors.New("application name cannot be empty")
+	ErrEmptyImage    = errors.New("image cannot be empty")
+	ErrInvalidStatus = errors.New("invalid status, must be one of: True, False, Unknown")
 )
 
 // Application represents an application deployment in the system
 type Application struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	Name      string             `bson:"name" json:"name"`
-	Namespace string             `bson:"namespace" json:"namespace"`
+	Name      string             `bson:"name" json:"name" validate:"required"`
+	Namespace string             `bson:"namespace" json:"namespace" validate:"required"`
 	UserID    string             `bson:"userId,omitempty" json:"userId,omitempty"`
-	Spec      ApplicationSpec    `bson:"spec" json:"spec"`
-	Status    ApplicationStatus  `bson:"status" json:"status"`
+	Spec      ApplicationSpec    `bson:"spec" json:"spec" validate:"required"`
+	Status    ApplicationStatus  `bson:"status" json:"status" validate:"required"`
 	CreatedAt time.Time          `bson:"createdAt" json:"createdAt"`
 	UpdatedAt time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
 
 // ApplicationSpec contains the desired state of the application
 type ApplicationSpec struct {
-	Image              string     `bson:"image" json:"image"`
+	Image              string     `bson:"image" json:"image" validate:"required"`
 	Replicas           *int32     `bson:"replicas,omitempty" json:"replicas,omitempty"`
 	Resources          *Resources `bson:"resources,omitempty" json:"resources,omitempty"`
 	Ports              []Port     `bson:"ports,omitempty" json:"ports,omitempty"`
@@ -49,8 +61,8 @@ type EnvVar struct {
 }
 
 type ApplicationCondition struct {
-	Type               string    `bson:"type" json:"type"`
-	Status             string    `bson:"status" json:"status"` // Enum: ["True", "False", "Unknown"]
+	Type               string    `bson:"type" json:"type" validate:"required"`
+	Status             string    `bson:"status" json:"status" validate:"oneof=True False Unknown"` // Enum: ["True", "False", "Unknown"]
 	LastTransitionTime time.Time `bson:"lastTransitionTime,omitempty" json:"lastTransitionTime,omitempty"`
 	Reason             string    `bson:"reason,omitempty" json:"reason,omitempty"`
 	Message            string    `bson:"message,omitempty" json:"message,omitempty"`
@@ -68,4 +80,31 @@ type ApplicationStatus struct {
 	ObservedGeneration int32                  `bson:"observedGeneration,omitempty" json:"observedGeneration,omitempty"`
 	Conditions         []ApplicationCondition `bson:"conditions,omitempty" json:"conditions,omitempty"`
 	Deployments        []DeploymentStatus     `bson:"deployments,omitempty" json:"deployments,omitempty"`
+}
+
+func (a *Application) Validate() error {
+	appValidate = validator.New(validator.WithRequiredStructEnabled())
+
+	err := appValidate.Struct(a)
+	if err == nil {
+		return nil
+	}
+
+	var validationErrors validator.ValidationErrors
+	if errors.As(err, &validationErrors) {
+		for _, fieldErr := range validationErrors {
+			switch fieldErr.StructField() {
+			case "Name":
+				return ErrEmptyAppName
+			case "Image":
+				return ErrEmptyImage
+			case "Status":
+				if fieldErr.Tag() == "oneof" {
+					return ErrInvalidStatus
+				}
+			}
+		}
+	}
+
+	return nil
 }

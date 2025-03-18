@@ -8,7 +8,7 @@ import (
 )
 
 // use a single instance of Validate, it caches struct info
-var validate *validator.Validate
+var clusterValidate *validator.Validate
 
 // Common validation errors
 var (
@@ -77,9 +77,9 @@ type ClusterStatus struct {
 }
 
 func (c *Cluster) Validate() error {
-	validate = validator.New(validator.WithRequiredStructEnabled())
+	clusterValidate = validator.New(validator.WithRequiredStructEnabled())
 
-	err := validate.Struct(c)
+	err := clusterValidate.Struct(c)
 	if err == nil {
 		return nil
 	}
