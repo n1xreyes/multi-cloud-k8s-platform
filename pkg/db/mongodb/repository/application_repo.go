@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"time"
 )
 
@@ -126,17 +127,35 @@ func (r *ApplicationRepository) DeleteApplication(ctx context.Context, id primit
 	return r.collection.DeleteOne(ctx, bson.M{"_id": id})
 }
 
-// ListApplications fetches all applications
-func (r *ApplicationRepository) ListApplications(ctx context.Context, filter bson.M) ([]models.Application, error) {
-	cursor, err := r.collection.Find(ctx, filter)
+// ListApplications fetches all applications, with pagination
+func (r *ApplicationRepository) ListApplications(
+	ctx context.Context,
+	filter bson.M,
+	page, pageSize int64,
+) ([]models.Application, int64, error) {
+	// Count total documents that match the filter
+	totalCount, err := r.collection.CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, fmt.Errorf("error counting applications: %w", err)
+	}
+
+	// Set up pagination options
+	opts := options.Find().
+		SetSkip((page - 1) * pageSize).
+		SetLimit(pageSize).
+		SetSort(bson.D{{Key: "createdAt", Value: -1}})
+
+	// Perform the query with pagination
+	cursor, err := r.collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error finding applications: %w", err)
 	}
 	defer cursor.Close(ctx)
 
 	var apps []models.Application
 	if err = cursor.All(ctx, &apps); err != nil {
-		return nil, err
+		return nil, 0, fmt.Errorf("error decoding applications: %w", err)
 	}
-	return apps, nil
+
+	return apps, totalCount, nil
 }
