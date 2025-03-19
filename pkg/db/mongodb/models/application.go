@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"strings"
 	"time"
 )
 
@@ -16,6 +17,13 @@ var (
 	ErrEmptyImage    = errors.New("image cannot be empty")
 	ErrInvalidStatus = errors.New("invalid status, must be one of: True, False, Unknown")
 )
+
+// Allowed statuses for case-insensitive validation
+var validStatuses = map[string]bool{
+	"true":    true,
+	"false":   true,
+	"unknown": true,
+}
 
 // Application represents an application deployment in the system
 type Application struct {
@@ -82,9 +90,21 @@ type ApplicationStatus struct {
 	Deployments        []DeploymentStatus     `bson:"deployments,omitempty" json:"deployments,omitempty"`
 }
 
-func (a *Application) Validate() error {
+// Custom validator function for Status field
+func validateStatus(fl validator.FieldLevel) bool {
+	status := strings.ToLower(fl.Field().String())
+	return validStatuses[status]
+}
+
+// Initialize validator instance and register custom validations
+func init() {
 	appValidate = validator.New(validator.WithRequiredStructEnabled())
 
+	// Register custom validation for status field
+	_ = appValidate.RegisterValidation("appStatus", validateStatus)
+}
+
+func (a *Application) Validate() error {
 	err := appValidate.Struct(a)
 	if err == nil {
 		return nil
