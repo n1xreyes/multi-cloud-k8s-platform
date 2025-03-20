@@ -10,18 +10,9 @@ CREATE TABLE application_configs (
     UNIQUE(name, namespace, user_id)
 );
 
--- Function to update timestamp
-CREATE OR REPLACE FUNCTION update_modified_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
 -- Triggers to update timestamps
 CREATE TRIGGER update_application_configs_timestamp BEFORE UPDATE ON application_configs
-FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
+FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 
 -- Indexes for better performance
 CREATE INDEX idx_application_configs_user_id ON application_configs(user_id);

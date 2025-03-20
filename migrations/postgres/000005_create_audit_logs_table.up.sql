@@ -13,15 +13,6 @@ CREATE TABLE audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Function to update timestamp
-CREATE OR REPLACE FUNCTION update_modified_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
 -- Indexes for better performance
 CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX idx_audit_logs_resource_type ON audit_logs(resource_type);

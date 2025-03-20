@@ -10,18 +10,9 @@ CREATE TABLE cloud_credentials (
     UNIQUE(user_id, provider, name)
 );
 
--- Function to update timestamp
-CREATE OR REPLACE FUNCTION update_modified_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
 -- Triggers to update timestamps
 CREATE TRIGGER update_cloud_credentials_timestamp BEFORE UPDATE ON cloud_credentials
-FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
+FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 
 -- Indexes for better performance
 CREATE INDEX idx_cloud_credentials_user_id ON cloud_credentials(user_id);

@@ -21,5 +21,4 @@ $$ LANGUAGE plpgsql;
 
 -- Triggers to update timestamps
 CREATE TRIGGER update_users_timestamp BEFORE UPDATE ON users
-FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
-
+FOR EACH ROW EXECUTE FUNCTION update_modified_column();
