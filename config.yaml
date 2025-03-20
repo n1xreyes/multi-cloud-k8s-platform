@@ -1,0 +1,43 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  timeout: 30s
+
+database:
+  postgres:
+    host: "localhost"
+    port: 5432
+    user: "postgres"
+    password: "postgres"
+    dbname: "k8s_platform"
+    sslmode: "disable"
+    max_open_conns: 25
+    max_idle_conns: 5
+    conn_max_lifetime: 5m
+
+  mongodb:
+    uri: "mongodb://localhost:27017"
+    database: "k8s_platform"
+    timeout: 10s
+
+kubernetes:
+  config_path: ""  # Empty for in-cluster config
+  namespace: "default"
+  operator_name: "k8s-platform-operator"
+
+auth:
+  jwt_secret: "your-secret-key-change-in-production"
+  token_expiry: 24h
+  api_key_expiry: 720h  # 30 days
+
+logging:
+  level: "debug"  # debug, info, warn, error
+  format: "json"  # json or text
+
+cloud_providers:
+  aws:
+    region: "us-east-1"
+  gcp:
+    project_id: "your-project-id"
+  azure:
+    subscription_id: "your-subscription-id"
