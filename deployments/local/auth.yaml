@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  labels:
+    app: auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth
+  template:
+    metadata:
+      labels:
+        app: auth
+    spec:
+      containers:
+        - name: auth
+          image: multi-cloud-k8s/auth-server:dev
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8081
+          env:
+            - name: DB_HOST
+              value: postgres-service
+            - name: DB_USER
+              value: postgres
+            - name: DB_PASSWORD
+              value: postgres
+            - name: DB_NAME
+              value: k8s_platform
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth
+spec:
+  selector:
+    app: auth
+  ports:
+    - port: 8081
+      targetPort: 8081
+      nodePort: 30081
+  type: NodePort
