@@ -20,7 +20,7 @@ import (
 
 const internalServerErrorMessage = "Internal Server Error"
 
-// Configuration struct for API Gateway
+// Config struct for API Gateway
 type Config struct {
 	Port              string `json:"port"`
 	AuthServiceURL    string `json:"auth_service_url"`
