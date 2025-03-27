@@ -1,0 +1,220 @@
+# .gitlab-ci.yml
+
+variables:
+  # Go configuration
+  GOPATH: "${CI_PROJECT_DIR}/.go" # Cache Go dependencies within the project directory
+  GO_VERSION: "1.24.1"           # <<< Go version from go.mod >>>
+  # Docker configuration for DinD (Docker-in-Docker)
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"   # Required for Docker >= 19.03
+  # Image names - uses GitLab registry
+  API_SERVER_IMAGE: $CI_REGISTRY_IMAGE/api-server
+  AUTH_SERVER_IMAGE: $CI_REGISTRY_IMAGE/auth-server
+  # Add other services if they get Dockerfiles later (e.g., operator, gateway)
+  # K8s deployment details
+  KUBE_NAMESPACE: "dev-unideploy" # Example namespace for dev deployment
+
+image: golang:${GO_VERSION} # Default image for jobs
+
+stages:
+  - setup
+  - build
+  - test
+  - scan
+  - package
+  - deploy
+
+# --- Cache ---
+cache:
+  key: ${CI_COMMIT_REF_SLUG} # Cache per branch
+  paths:
+    - .go/pkg/mod/            # Cache Go module dependencies
+
+# --- Stage: setup ---
+verify:setup:
+  stage: setup
+  script:
+    - echo "Verifying Go environment (expecting ${GO_VERSION}) and fetching dependencies..."
+    - go version
+    - go mod tidy        # Ensure go.mod and go.sum are consistent
+    - go mod download    # Download dependencies to populate cache
+    - go vet ./...       # Run go vet static analysis
+
+# --- Stage: build ---
+build:binaries:
+  stage: build
+  script:
+    - echo "Building Go binaries..."
+    - mkdir -p bin # Ensure bin directory exists
+    - go build -o bin/api-server ./cmd/api-server/main.go
+    - go build -o bin/api-gateway ./cmd/api-gateway/main.go
+    # Add builds for other components mentioned in Makefile when they're ready
+    # - go build -o bin/operator ./cmd/operator/main.go
+    # - go build -o bin/cli ./cmd/cli/main.go
+    - echo "Build complete."
+  artifacts:
+    paths:
+      - bin/ # Pass binaries to the package stage
+    expire_in: 1 hour # Keep artifacts for 1 hour
+
+# --- Stage: test ---
+# Placeholder for tests - will succeed for now as no tests exist
+run:tests:
+  stage: test
+  script:
+    - echo "Running tests..."
+    # - go test -v -race ./... # Uncomment and adapt when tests are added
+    - echo "Tests passed (placeholder)."
+
+# --- Stage: scan ---
+vulnerability:scan:
+  stage: scan
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""] # Override entrypoint
+  allow_failure: false # Fail the pipeline if vulnerabilities are found (adjust as needed)
+  script:
+    - echo "Running Trivy vulnerability scan on filesystem..."
+    # Scan project files (go.sum, etc.) for known vulnerabilities
+    # Exit code 1 fails the job if vulnerabilities of specified severity are found
+    - trivy fs --severity HIGH,CRITICAL --exit-code 1 ${CI_PROJECT_DIR}
+    # You can also add image scanning in the 'package' stage *after* images are built
+    # Example (would run in package stage):
+    # - trivy image --severity HIGH,CRITICAL --exit-code 1 $API_SERVER_IMAGE:$CI_COMMIT_SHORT_SHA
+
+# --- Stage: package ---
+build:push:images:
+  stage: package
+  image: docker:latest
+  services:
+    - docker:dind # Docker-in-Docker
+  variables:
+    # Instruct Docker not to start over TLS (internal communication with dind)
+    DOCKER_TLS_CERTDIR: ""
+    # Specify the host for the Docker daemon
+    DOCKER_HOST: tcp://docker:2375
+  needs:
+    - job: build:binaries # Ensure binaries are built before packaging
+      artifacts: true
+  before_script:
+    # Login to the GitLab Container Registry
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - echo "Docker login successful."
+  script:
+    - echo "Building and pushing Docker images..."
+    - export TAG=$CI_COMMIT_SHORT_SHA # Use short commit SHA for tag
+    - export LATEST_TAG=latest
+
+    # --- Build API Server Image ---
+    # IMPORTANT: Assumes 'dockerfiles/api.Dockerfile' exists and copies 'bin/api-server'
+    - |
+      if [ -f "dockerfiles/api.Dockerfile" ]; then
+        echo "Building API Server image..."
+        docker build -f dockerfiles/api.Dockerfile \
+          -t $API_SERVER_IMAGE:$TAG \
+          -t $API_SERVER_IMAGE:$LATEST_TAG \
+          .
+        echo "Pushing API Server image..."
+        docker push $API_SERVER_IMAGE:$TAG
+        docker push $API_SERVER_IMAGE:$LATEST_TAG
+      else
+        echo "WARNING: dockerfiles/api.Dockerfile not found. Skipping build."
+      fi
+
+    # --- Build Auth Server Image ---
+    # IMPORTANT: Assumes 'dockerfiles/auth.Dockerfile' exists and copies 'bin/auth-server' (if built)
+    - |
+      if [ -f "dockerfiles/auth.Dockerfile" ]; then
+       echo "Building Auth Server image..."
+       # NOTE: The build stage doesn't build an 'auth-server' binary currently.
+       # Assuming the Dockerfile handles the build or uses api-server/gateway binary?
+       # If an auth-server binary is needed, add it to the 'build_binaries' job.
+       # Let's assume for now it might use the api-gateway binary or similar logic.
+       # Adjust the Dockerfile path and binary source as needed.
+       docker build -f dockerfiles/auth.Dockerfile \
+         -t $AUTH_SERVER_IMAGE:$TAG \
+         -t $AUTH_SERVER_IMAGE:$LATEST_TAG \
+         . # Make sure the context '.' contains needed files (e.g., the 'bin' dir from artifacts)
+       echo "Pushing Auth Server image..."
+       docker push $AUTH_SERVER_IMAGE:$TAG
+       docker push $AUTH_SERVER_IMAGE:$LATEST_TAG
+      else
+       echo "WARNING: dockerfiles/auth.Dockerfile not found. Skipping build."
+      fi
+
+    # --- Add other image builds here (e.g., Gateway, Operator, CLI) ---
+    # Example for Gateway:
+    # - |
+    #   if [ -f "dockerfiles/gateway.Dockerfile" ]; then
+    #     echo "Building API Gateway image..."
+    #     docker build -f dockerfiles/gateway.Dockerfile \
+    #       -t $CI_REGISTRY_IMAGE/api-gateway:$TAG \
+    #       -t $CI_REGISTRY_IMAGE/api-gateway:$LATEST_TAG \
+    #       . # Assumes bin/api-gateway exists from build_binaries artifact
+    #     docker push $CI_REGISTRY_IMAGE/api-gateway:$TAG
+    #     docker push $CI_REGISTRY_IMAGE/api-gateway:$LATEST_TAG
+    #   else
+    #     echo "WARNING: dockerfiles/gateway.Dockerfile not found. Skipping build."
+    #   fi
+
+    - echo "Image packaging complete."
+
+# --- Stage: deploy ---
+deploy:dev:
+  stage: deploy
+  image:
+    name: bitnami/kubectl:latest # Image with kubectl
+    entrypoint: [""]
+  environment:
+    name: development # Define a GitLab environment
+    url: https://dev.unideploy.ca # Intended domain - does not exist yet
+  needs:
+    - build:push:images # Depends on images being pushed
+  before_script:
+    - echo "Setting up kubectl context..."
+    # Check if KUBECONFIG_DEV variable exists
+    - |
+      if [ -z "$KUBECONFIG_DEV" ]; then
+        echo "Error: KUBECONFIG_DEV variable is not set. Configure it in GitLab CI/CD settings."
+        exit 1
+      fi
+    # Create kubeconfig directory and file from the variable
+    - mkdir -p ~/.kube
+    - echo "$KUBECONFIG_DEV" > ~/.kube/config
+    - kubectl config get-contexts
+    - kubectl config use-context $(kubectl config current-context) # Ensure correct context is active
+    - kubectl get ns $KUBE_NAMESPACE || kubectl create ns $KUBE_NAMESPACE # Ensure namespace exists
+  script:
+    - echo "Deploying to Development Kubernetes cluster..."
+    - export TAG=$CI_COMMIT_SHORT_SHA
+
+    # --- Update Kubernetes Manifests ---
+    # **Option 1: Using sed (Simple, but brittle)**
+    - echo "Updating image tags in Kubernetes manifests using sed..."
+    - |
+      find deployments/local -name '*.yaml' -exec sed -i "s|image: multi-cloud-k8s/api-server:dev|image: ${API_SERVER_IMAGE}:${TAG}|g" {} +
+      find deployments/local -name '*.yaml' -exec sed -i "s|image: multi-cloud-k8s/auth-server:dev|image: ${AUTH_SERVER_IMAGE}:${TAG}|g" {} +
+      # Add sed commands for other images if necessary (e.g., gateway)
+      # find deployments/local -name '*.yaml' -exec sed -i "s|image: multi-cloud-k8s/api-gateway:dev|image: ${CI_REGISTRY_IMAGE}/api-gateway:${TAG}|g" {} +
+
+    # **Option 2: Using kubectl set image (Better for existing deployments)**
+    # **Option 3: Using Kustomize (Recommended)** - See previous answer for details
+
+    # --- Apply Manifests ---
+    # Assuming Option 1 (sed) was used or manifests are ready:
+    - echo "Applying Kubernetes manifests from deployments/local/..."
+    - kubectl apply -f deployments/local/ -n $KUBE_NAMESPACE
+
+    # --- Verify Deployment ---
+    - echo "Verifying deployment status..."
+    - sleep 15 # Give pods time to start
+    - kubectl get pods -n $KUBE_NAMESPACE
+    - kubectl rollout status deployment/api -n $KUBE_NAMESPACE --timeout=120s
+    - kubectl rollout status deployment/auth -n $KUBE_NAMESPACE --timeout=120s
+    # Add rollout status checks for other deployments
+
+    - echo "Deployment to Development successful."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"' # Only run deploy job on the main branch
+      when: on_success
+    - when: never # Do not run for other branches/tags by default
