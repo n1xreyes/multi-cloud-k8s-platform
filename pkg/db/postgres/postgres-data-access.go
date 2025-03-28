@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/lib/pq"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq" // PostgreSQL driver
@@ -22,6 +24,17 @@ type Config struct {
 // Client represents a PostgreSQL client
 type Client struct {
 	db *sql.DB
+}
+
+// ApplicationConfig represents an application configuration in the database
+type ApplicationConfig struct {
+	ID         int       `db:"id"`
+	Name       string    `db:"name"`
+	Namespace  string    `db:"namespace"`
+	UserID     int       `db:"user_id"`
+	ConfigData string    `db:"config_data"` // Stored as JSONB in DB, handled as string in Go
+	CreatedAt  time.Time `db:"created_at"`
+	UpdatedAt  time.Time `db:"updated_at"`
 }
 
 // NewClient creates a new PostgreSQL client
@@ -251,4 +264,134 @@ func (c *Client) ExecuteInTransaction(ctx context.Context, fn func(*sql.Tx) erro
 
 	err = fn(tx)
 	return err
+}
+
+// CreateApplicationConfig creates a new application configuration
+func (c *Client) CreateApplicationConfig(ctx context.Context, config *ApplicationConfig) error {
+	query := `
+		INSERT INTO application_configs (name, namespace, user_id, config_data)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, created_at, updated_at
+	`
+	row := c.db.QueryRowContext(
+		ctx, query,
+		config.Name, config.Namespace, config.UserID, config.ConfigData,
+	)
+	return row.Scan(&config.ID, &config.CreatedAt, &config.UpdatedAt)
+}
+
+// GetApplicationConfigByNameAndNamespace retrieves a config by name, namespace, and user
+func (c *Client) GetApplicationConfigByNameAndNamespace(ctx context.Context, name, namespace string, userID int) (*ApplicationConfig, error) {
+	query := `
+		SELECT id, name, namespace, user_id, config_data, created_at, updated_at
+		FROM application_configs
+		WHERE name = $1 AND namespace = $2 AND user_id = $3
+	`
+	config := &ApplicationConfig{}
+	err := c.db.QueryRowContext(ctx, query, name, namespace, userID).Scan(
+		&config.ID, &config.Name, &config.Namespace, &config.UserID, &config.ConfigData,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+	// Don't wrap sql.ErrNoRows, let the caller handle it
+	return config, err
+}
+
+// ListApplicationConfigs retrieves configurations, optionally filtered by namespace and user
+func (c *Client) ListApplicationConfigs(ctx context.Context, namespace string, userID int) ([]ApplicationConfig, error) {
+	// Build query dynamically based on filters
+	baseQuery := `SELECT id, name, namespace, user_id, config_data, created_at, updated_at FROM application_configs`
+	conditions := []string{}
+	args := []interface{}{}
+	argID := 1
+
+	if namespace != "" {
+		conditions = append(conditions, fmt.Sprintf("namespace = $%d", argID))
+		args = append(args, namespace)
+		argID++
+	}
+	if userID != 0 { // Assuming 0 means "all users" or is invalid
+		conditions = append(conditions, fmt.Sprintf("user_id = $%d", argID))
+		args = append(args, userID)
+		argID++
+	}
+
+	query := baseQuery
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	query += " ORDER BY updated_at DESC" // Example ordering
+
+	rows, err := c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query application configs: %w", err)
+	}
+	defer rows.Close()
+
+	var configs []ApplicationConfig
+	for rows.Next() {
+		var cfg ApplicationConfig
+		if err := rows.Scan(&cfg.ID, &cfg.Name, &cfg.Namespace, &cfg.UserID, &cfg.ConfigData, &cfg.CreatedAt, &cfg.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan application config row: %w", err)
+		}
+		configs = append(configs, cfg)
+	}
+
+	return configs, rows.Err()
+}
+
+// UpdateApplicationConfig updates an existing application configuration's data
+func (c *Client) UpdateApplicationConfig(ctx context.Context, config *ApplicationConfig) error {
+	query := `
+		UPDATE application_configs
+		SET config_data = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE name = $2 AND namespace = $3 AND user_id = $4
+		RETURNING updated_at -- Optionally return updated_at if needed, otherwise check rows affected
+	`
+	result, err := c.db.ExecContext(ctx, query, config.ConfigData, config.Name, config.Namespace, config.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to execute update config query: %w", err)
+	}
+
+	// Check if any row was actually updated
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected after update: %w", err)
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows // Return ErrNoRows if the config wasn't found for the given user/name/namespace
+	}
+
+	return nil
+}
+
+// DeleteApplicationConfig deletes a configuration by name, namespace, and user
+func (c *Client) DeleteApplicationConfig(ctx context.Context, name, namespace string, userID int) error {
+	query := `
+		DELETE FROM application_configs
+		WHERE name = $1 AND namespace = $2 AND user_id = $3
+	`
+	result, err := c.db.ExecContext(ctx, query, name, namespace, userID)
+	if err != nil {
+		return fmt.Errorf("failed to execute delete config query: %w", err)
+	}
+
+	// Check if any row was actually deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected after delete: %w", err)
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows // Return ErrNoRows if the config wasn't found
+	}
+
+	return nil
+}
+
+// IsUniqueConstraintViolation checks if an error is a PostgreSQL unique violation.
+func IsUniqueConstraintViolation(err error) bool {
+	if pqErr, ok := err.(*pq.Error); ok {
+		// 23505 is the PostgreSQL error code for unique_violation
+		return pqErr.Code == "23505"
+	}
+	return false
 }

@@ -198,7 +198,7 @@ deploy:dev:
       # find deployments/local -name '*.yaml' -exec sed -i "s|image: multi-cloud-k8s/api-gateway:dev|image: ${CI_REGISTRY_IMAGE}/api-gateway:${TAG}|g" {} +
 
     # **Option 2: Using kubectl set image (Better for existing deployments)**
-    # **Option 3: Using Kustomize (Recommended)** - See previous answer for details
+    # **Option 3: Using Kustomize **
 
     # --- Apply Manifests ---
     # Assuming Option 1 (sed) was used or manifests are ready:
