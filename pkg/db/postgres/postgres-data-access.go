@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/lib/pq"
-	"strings"
+	"strings" // (+) Import strings
 	"time"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
+	"github.com/lib/pq" // PostgreSQL driver
+	_ "github.com/lib/pq"
 )
 
 // Config contains the PostgreSQL connection parameters
