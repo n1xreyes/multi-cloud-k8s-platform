@@ -277,35 +277,27 @@ func setupMetrics() (*prometheus.Registry, gin.HandlerFunc) {
 	return registry, metricMiddleware
 }
 
-// Register the service routes
+// registerRoutes handles registering the service routes
 func registerRoutes(engine *gin.Engine, routes []ServiceRoute, logger *zap.Logger) {
 	// API routes with authentication
-	api := engine.Group("/api")
+	api := engine.Group("/api/v1") // Use /api/v1 as base for all proxied routes
 	{
 		// Register service routes
 		for _, route := range routes {
 			logger.Info("Registering route",
 				zap.String("name", route.Name),
-				zap.String("path", route.PathBase),
+				zap.String("path", route.PathBase), // This is the path base the gateway listens on
 				zap.Strings("methods", route.Methods),
+				zap.String("target", route.URL), // Log target URL
 			)
 
 			handler := createProxyHandler(route, logger)
-			routePath := strings.TrimPrefix(route.PathBase, "/api") + "/*path"
+			// Dynamically create the gin route path based on PathBase
+			relativePath := strings.TrimPrefix(route.PathBase, "/api/v1/")
+			ginPath := relativePath + "/*proxyPath" // Use a named parameter to capture the rest
 
 			for _, method := range route.Methods {
-				switch method {
-				case "GET":
-					api.GET(routePath, handler)
-				case "POST":
-					api.POST(routePath, handler)
-				case "PUT":
-					api.PUT(routePath, handler)
-				case "DELETE":
-					api.DELETE(routePath, handler)
-				case "PATCH":
-					api.PATCH(routePath, handler)
-				}
+				api.Handle(method, ginPath, handler) // Use Handle for flexibility
 			}
 		}
 	}
@@ -324,30 +316,56 @@ func main() {
 
 	// Define service routes
 	routes := []ServiceRoute{
-		{
-			Name:     "API Service",
-			PathBase: "/api/v1",
-			URL:      config.APIServiceURL,
-			Methods:  []string{"GET", "POST", "PUT", "DELETE"},
-		},
+		// { // This seems redundant if API Service just proxies others? Keep for now.
+		// 	Name:     "API Service",
+		// 	PathBase: "/api/v1", // Base path handled by the group
+		// 	URL:      config.APIServiceURL,
+		// 	Methods:  []string{"GET", "POST", "PUT", "DELETE"},
+		// },
 		{
 			Name:     "Deployment Service",
 			PathBase: "/api/v1/deployments",
-			URL:      "http://deployment-service:8080",
+			URL:      os.Getenv("DEPLOYMENT_SERVICE_URL"),
 			Methods:  []string{"GET", "POST", "PUT", "DELETE"},
 		},
 		{
 			Name:     "Monitoring Service",
 			PathBase: "/api/v1/monitoring",
-			URL:      "http://monitoring-service:8080",
+			URL:      os.Getenv("MONITORING_SERVICE_URL"),
 			Methods:  []string{"GET"},
 		},
 		{
 			Name:     "Configuration Service",
 			PathBase: "/api/v1/configs",
-			URL:      "http://configuration-service:8080",
+			URL:      os.Getenv("CONFIG_SERVICE_URL"),
 			Methods:  []string{"GET", "POST", "PUT", "DELETE"},
 		},
+		// { // Example for the core API service if it has its own endpoints besides proxying
+		// 	Name:     "Core API Service",
+		// 	PathBase: "/api/v1/core", // Example path
+		// 	URL:      config.APIServiceURL, // Target URL
+		// 	Methods:  []string{"GET"},
+		// },
+	}
+
+	// Ensure fallback URLs if env vars are not set
+	for i := range routes {
+		switch routes[i].Name {
+		case "Deployment Service":
+			if routes[i].URL == "" {
+				routes[i].URL = "http://deployment-service:8080"
+			}
+		case "Monitoring Service":
+			if routes[i].URL == "" {
+				routes[i].URL = "http://monitoring-service:8080"
+			}
+		case "Configuration Service":
+			if routes[i].URL == "" {
+				routes[i].URL = "http://config-service:8082"
+			} // Default internal URL for config service
+			// case "Core API Service":
+			//     if routes[i].URL == "" { routes[i].URL = config.APIServiceURL } // Use loaded config default
+		}
 	}
 
 	// Set up Prometheus registry and middleware
@@ -373,11 +391,11 @@ func main() {
 	// Metrics endpoint (for Prometheus)
 	router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(registry, promhttp.HandlerOpts{})))
 
-	// Apply authentication middleware to API endpoints
-	authGroup := router.Group("/api")
+	// Apply authentication middleware ONLY to the /api/v1 group
+	authGroup := router.Group("/api/v1")
 	authGroup.Use(authMiddleware(config.AuthServiceURL, logger))
 
-	// Register service routes
+	// (*) Register routes within the main router instance, the group is handled internally by registerRoutes
 	registerRoutes(router, routes, logger)
 
 	// Start server

@@ -70,6 +70,7 @@ func (c *Client) Close() error {
 	return c.db.Close()
 }
 
+// PingContext exposes the PingContext for the DB client (for health checks)
 func (c *Client) PingContext(ctx context.Context) error {
 	return c.db.PingContext(ctx)
 }
