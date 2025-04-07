@@ -394,4 +394,38 @@ func main() {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 	})
+
+	// Metrics endpoint for Prometheus
+	router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(registry, promhttp.HandlerOpts{})))
+
+	// Initialize Handlers
+	handlers := &Handlers{
+		dbClient: dbClient,
+		logger:   logger,
+	}
+
+	// API routes for configuration
+	// Note: These routes match the gateway path base /api/v1/configs
+	// The actual service receives requests on /configs, /configs/:name etc.
+	configRoutes := router.Group("/configs")
+	{
+		configRoutes.POST("", handlers.createApplicationConfig)
+		configRoutes.GET("", handlers.listApplicationConfigs)
+		configRoutes.GET("/:name", handlers.getApplicationConfig)
+		configRoutes.PUT("/:name", handlers.updateApplicationConfig)
+		configRoutes.DELETE("/:name", handlers.deleteApplicationConfig)
+	}
+
+	// Start server
+	server := &http.Server{
+		Addr:         ":" + cfg.Port,
+		Handler:      router,
+		ReadTimeout:  cfg.Timeout,
+		WriteTimeout: cfg.Timeout,
+	}
+
+	logger.Info("Starting Configuration Service", zap.String("port", cfg.Port))
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Fatal("Failed to start server", zap.Error(err))
+	}
 }

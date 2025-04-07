@@ -70,6 +70,10 @@ func (c *Client) Close() error {
 	return c.db.Close()
 }
 
+func (c *Client) PingContext(ctx context.Context) error {
+	return c.db.PingContext(ctx)
+}
+
 // User represents a user in the database
 type User struct {
 	ID        int       `db:"id"`
