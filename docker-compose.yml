@@ -21,16 +21,23 @@ services:
       context: .
       dockerfile: ./build/api/Dockerfile
     ports:
-      - "8080:8080"
+      - "8080:8080" # Might be redundant if using gateway
     environment:
-      - DB_HOST=postgres
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - DB_NAME=k8s_platform
-      - MONGODB_URI=mongodb://mongodb:27017
+#      - DB_HOST=postgres
+#      - DB_USER=postgres
+#      - DB_PASSWORD=postgres
+#      - DB_NAME=k8s_platform
+#      - MONGODB_URI=mongodb://mongodb:27017
+      - PORT=8080 #Internal port for the API server
+      - DEPLOYMENT_SERVICE_URL=http://deployment-service:8080 # Assuming deployment service exists
+      - MONITORING_SERVICE_URL=http://monitoring-service:8080 # Assuming monitoring service exists
+      - CONFIG_SERVICE_URL=http://config-service:8082       # URL for config service
     depends_on:
-      - postgres
-      - mongodb
+      # - postgres # Maybe not needed directly
+      # - mongodb
+      - config-service # (+) Depends on config service
+      # - deployment-service # (+) Add other dependencies
+      # - monitoring-service # (+) Add other dependencies
 
   auth:
     build:
@@ -45,6 +52,47 @@ services:
       - DB_NAME=k8s_platform
     depends_on:
       - postgres
+
+  config-service:
+    build:
+      context: .
+      dockerfile: ./build/config/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - PORT=8082
+      - DB_HOST=postgres
+      - DB_USER=postgres
+      - DB_NAME=k8s_platform
+      - DB_SSLMODE=disable
+    depends_on:
+      - postgres
+
+  # Add placeholders for other services when ready for dependency graph
+  # deployment-service: ...
+  # monitoring-service: ...
+
+  # API Gateway (Optional for docker-compose if testing services directly, but good practice)
+  gateway:
+    build:
+      context: .
+      dockerfile: ./build/gateway/Dockerfile
+    ports:
+      - "8000:8080" # Map host 8000 to gateway's internal 8080
+    environment:
+      - PORT=8080
+      - AUTH_SERVICE_URL=http://auth:8081
+      - API_SERVICE_URL=http://api:8080
+      - DEPLOYMENT_SERVICE_URL=http://deployment-service:8080
+      - MONITORING_SERVICE_URL=http://monitoring-service:8080
+      - CONFIG_SERVICE_URL=http://config-service:8082
+    depends_on:
+      - api
+      - auth
+      - config-service
+      # - deployment-service
+      # - monitoring-service
+
 
 volumes:
   postgres-data:

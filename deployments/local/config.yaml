@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-service
+  labels:
+    app: config-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: config-service
+  template:
+    metadata:
+      name: config-service
+      labels:
+        app: config-service
+    spec:
+      containers:
+        - name: config-service
+          image: multi-cloud-k8s/config-server:dev # Image build in makefile
+          imagePullPolicy: Never # Use local image from minikube docker-env
+          ports:
+            - containerPort: 8082
+          env:
+            - name: PORT
+              value: "8082" # Set container port
+            - name: DB_HOST
+              value: postgres-service
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              value: postgres
+            - name: DB_PASSWORD
+              value: postgres
+            - name: DB_NAME
+              value: k8s_platform
+            - name: DB_SSLMODE
+              value: disable
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-service
+spec:
+  selector:
+    app: config-service
+  ports:
+    - name: http
+      port: 8082 # Cluster-internal port
+      targetPort: 8082
+      nodePort: 30082 # Expose externally via NodePort for local dev
+  type: NodePort # Use NodePort for easy local access via minikube ip:nodePort

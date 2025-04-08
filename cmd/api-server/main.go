@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -45,12 +46,31 @@ func NewServiceConfig() ServiceConfig {
 
 // NewServiceClient creates clients for interacting with microservices
 func NewServiceClient(logger *zap.Logger) *ServiceClient {
+	config := NewServiceConfig()
+
+	// Set default URLs if env vars are empty
+	if config.DeploymentServiceURL == "" {
+		config.DeploymentServiceURL = os.Getenv("DEPLOYMENT_SERVICE_URL")
+	}
+	if config.MonitoringServiceURL == "" {
+		config.MonitoringServiceURL = os.Getenv("MONITORING_SERVICE_URL")
+	}
+	if config.ConfigServiceURL == "" {
+		config.ConfigServiceURL = os.Getenv("CONFIG_SERVICE_URL")
+	}
+
+	logger.Info("Service URLs",
+		zap.String("deployment", config.DeploymentServiceURL),
+		zap.String("monitoring", config.MonitoringServiceURL),
+		zap.String("config", config.ConfigServiceURL),
+	)
+
 	return &ServiceClient{
-		deploymentClient: &http.Client{Timeout: 30 * time.Second},
-		monitoringClient: &http.Client{Timeout: 30 * time.Second},
-		configClient:     &http.Client{Timeout: 30 * time.Second},
+		deploymentClient: &http.Client{Timeout: config.Timeout},
+		monitoringClient: &http.Client{Timeout: config.Timeout},
+		configClient:     &http.Client{Timeout: config.Timeout},
 		logger:           logger,
-		config:           NewServiceConfig(),
+		config:           config,
 	}
 }
 
@@ -111,128 +131,82 @@ func extractServiceFromPath(path string) string {
 	}
 }
 
+// Generic Proxy Handler
+func (sc *ServiceClient) proxyRequest(targetBaseUrl string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Extract the rest of the path
+		proxyPath := c.Param("proxyPath") // Assuming path is like /deployments/*proxyPath
+
+		// Construct the target URL
+		targetURL := fmt.Sprintf("%s%s", targetBaseUrl, proxyPath)
+		if c.Request.URL.RawQuery != "" {
+			targetURL = fmt.Sprintf("%s?%s", targetBaseUrl, c.Request.URL.RawQuery)
+		}
+
+		sc.logger.Debug("Proxying request",
+			zap.String("method", c.Request.Method),
+			zap.String("originalPath", c.Request.URL.Path),
+			zap.String("targetURL", targetURL))
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), sc.config.Timeout)
+		defer cancel()
+
+		// Create new request to target service
+		req, err := http.NewRequestWithContext(ctx, c.Request.Method, targetURL, c.Request.Body)
+		if err != nil {
+			sc.logger.Error("Failed to create proxy request", zap.Error(err), zap.String("targetURL", targetURL))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error creating proxy request"})
+
+			return
+		}
+
+		// Copy headers (including potential user/auth headers from gateway
+		req.Header = c.Request.Header.Clone()
+
+		// Execute the request
+		client := &http.Client{Timeout: sc.config.Timeout}
+		resp, err := client.Do(req)
+		if err != nil {
+			sc.logger.Error("Proxy request failed", zap.Error(err), zap.String("target", targetURL))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Service Unavailable: %s", targetBaseUrl)})
+
+			return
+		}
+		defer resp.Body.Close()
+
+		// Copy response header back to client
+		for key, values := range resp.Header {
+			for _, value := range values {
+				c.Header(key, value)
+			}
+		}
+
+		// Send response back
+		c.Status(resp.StatusCode)
+		_, err = io.Copy(c.Writer, resp.Body)
+		if err != nil {
+			sc.logger.Error("Failed to copy response body", zap.Error(err))
+			// Status is already set, difficult to change now. Log the error.
+		}
+	}
+}
+
 // Deployment Service APIs
 func (sc *ServiceClient) registerDeploymentRoutes(r *gin.RouterGroup) {
-	// Get all deployments
-	r.GET("/deployments", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), sc.config.Timeout)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(ctx, "GET", sc.config.DeploymentServiceURL+"/deployments", nil)
-		if err != nil {
-			sc.logger.Error("Failed to create deployment request", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-
-		resp, err := sc.deploymentClient.Do(req)
-		if err != nil {
-			sc.logger.Error("Deployment service request failed", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Deployment Service Unavailable"})
-			return
-		}
-		defer resp.Body.Close()
-
-		c.DataFromReader(resp.StatusCode, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
-	})
-
-	// Create a new deployment
-	r.POST("/deployments", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), sc.config.Timeout)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(ctx, "POST", sc.config.DeploymentServiceURL+"/deployments", c.Request.Body)
-		if err != nil {
-			sc.logger.Error("Failed to create deployment request", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-
-		resp, err := sc.deploymentClient.Do(req)
-		if err != nil {
-			sc.logger.Error("Deployment service request failed", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Deployment Service Unavailable"})
-			return
-		}
-		defer resp.Body.Close()
-
-		c.DataFromReader(resp.StatusCode, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
-	})
+	handler := sc.proxyRequest(sc.config.DeploymentServiceURL)
+	r.Any("/deployments/*proxyPath", handler) // Capture all methods and subpaths
 }
 
 // Monitoring Service APIs
 func (sc *ServiceClient) registerMonitoringRoutes(r *gin.RouterGroup) {
-	// Get cluster metrics
-	r.GET("/monitoring/metrics", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), sc.config.Timeout)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(ctx, "GET", sc.config.MonitoringServiceURL+"/metrics", nil)
-		if err != nil {
-			sc.logger.Error("Failed to create monitoring request", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-
-		resp, err := sc.monitoringClient.Do(req)
-		if err != nil {
-			sc.logger.Error("Monitoring service request failed", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Monitoring Service Unavailable"})
-			return
-		}
-		defer resp.Body.Close()
-
-		c.DataFromReader(resp.StatusCode, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
-	})
+	handler := sc.proxyRequest(sc.config.MonitoringServiceURL)
+	r.Any("/monitoring/*proxyPath", handler)
 }
 
 // Configuration Service APIs
 func (sc *ServiceClient) registerConfigRoutes(r *gin.RouterGroup) {
-	// Get configurations
-	r.GET("/configs", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), sc.config.Timeout)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(ctx, "GET", sc.config.ConfigServiceURL+"/configs", nil)
-		if err != nil {
-			sc.logger.Error("Failed to create config request", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-
-		resp, err := sc.configClient.Do(req)
-		if err != nil {
-			sc.logger.Error("Config service request failed", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Configuration Service Unavailable"})
-			return
-		}
-		defer resp.Body.Close()
-
-		c.DataFromReader(resp.StatusCode, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
-	})
-
-	// Create a new configuration
-	r.POST("/configs", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), sc.config.Timeout)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(ctx, "POST", sc.config.ConfigServiceURL+"/configs", c.Request.Body)
-		if err != nil {
-			sc.logger.Error("Failed to create config request", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-
-		resp, err := sc.configClient.Do(req)
-		if err != nil {
-			sc.logger.Error("Config service request failed", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Configuration Service Unavailable"})
-			return
-		}
-		defer resp.Body.Close()
-
-		c.DataFromReader(resp.StatusCode, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
-	})
+	handler := sc.proxyRequest(sc.config.ConfigServiceURL)
+	r.Any("/configs/*proxyPath", handler)
 }
 
 func main() {
@@ -242,9 +216,6 @@ func main() {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
 	defer logger.Sync()
-
-	// Load configuration
-	config := NewServiceConfig()
 
 	// Set up Prometheus registry and middleware
 	registry, metricsMiddleware := setupMetrics()
@@ -269,7 +240,7 @@ func main() {
 	serviceClient := NewServiceClient(logger)
 
 	// API routes group
-	apiRoutes := router.Group("/api/v1")
+	apiRoutes := router.Group("/api/v1") // Base path for API Server's own endpoints if any, or just groups
 	{
 		serviceClient.registerDeploymentRoutes(apiRoutes)
 		serviceClient.registerMonitoringRoutes(apiRoutes)
@@ -278,13 +249,13 @@ func main() {
 
 	// Start server
 	server := &http.Server{
-		Addr:         ":" + config.Port,
+		Addr:         ":" + serviceClient.config.Port,
 		Handler:      router,
-		ReadTimeout:  config.Timeout,
-		WriteTimeout: config.Timeout,
+		ReadTimeout:  serviceClient.config.Timeout,
+		WriteTimeout: serviceClient.config.Timeout,
 	}
 
-	logger.Info("Starting REST API Service", zap.String("port", config.Port))
+	logger.Info("Starting REST API Service", zap.String("port", serviceClient.config.Port))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Fatal("Server failed", zap.Error(err))
 	}
