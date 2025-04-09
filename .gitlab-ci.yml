@@ -11,6 +11,10 @@ variables:
   API_SERVER_IMAGE: $CI_REGISTRY_IMAGE/api-server
   AUTH_SERVER_IMAGE: $CI_REGISTRY_IMAGE/auth-server
   # Add other services if they get Dockerfiles later (e.g., operator, gateway)
+  CI_REGISTRY_IMAGE_API: $CI_REGISTRY_IMAGE/api-server
+  CI_REGISTRY_IMAGE_AUTH: $CI_REGISTRY_IMAGE/auth-server
+  CI_REGISTRY_IMAGE_CONFIG: $CI_REGISTRY_IMAGE/config-server
+  CI_REGISTRY_IMAGE_GATEWAY: $CI_REGISTRY_IMAGE/api-gateway
   # K8s deployment details
   KUBE_NAMESPACE: "dev-unideploy" # Example namespace for dev deployment
 
