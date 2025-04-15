@@ -1,5 +1,4 @@
-
-FROM golang:1.24-alpine as builder
+FROM golang:1.24-alpine AS builder
 LABEL authors="Angelo Reyes"
 
 WORKDIR /app
@@ -17,7 +16,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o api-server ./cmd/api-server/main.go
 # Use a small alpine image for the final image
 FROM alpine:3.18
 
-RUN apk --no-cache add ca-certificates
+RUN apk update && apk --no-cache add ca-certificates
 
 WORKDIR /app
 

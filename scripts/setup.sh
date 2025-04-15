@@ -29,7 +29,7 @@ fi
 
 # Check for kubectl
 if command -v kubectl &> /dev/null; then
-    KUBECTL_VERSION=$(kubectl version --client --short | awk '{print $3}')
+    KUBECTL_VERSION=$(kubectl version --client | awk '{print $3}')
     echo "✓ kubectl found (version $KUBECTL_VERSION)"
 else
     echo "✗ kubectl not found. Please install kubectl."

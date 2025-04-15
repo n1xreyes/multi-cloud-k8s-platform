@@ -9,9 +9,9 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/api-gateway ./cmd/api-gateway/main.go
 
-FROM alpine:latest
+FROM alpine:3.18
 
-RUN apk --no-cache add ca-certificates
+RUN apk update && apk --no-cache add ca-certificates
 
 WORKDIR /root/
 COPY --from=builder /bin/api-gateway .

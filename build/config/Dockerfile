@@ -12,11 +12,11 @@ COPY . .
 # Build config-server binary
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/config-server ./cmd/config-server/main.go
 
-FROM alpine:latest
+FROM alpine:3.18
 
-RUN apk --no-cache add ca-certificates
+RUN apk update && apk --no-cache add ca-certificates
 
-WORKIR /root/
+WORKDIR /root/
 
 # Copy the binary from the builder stage
 COPY --from=builder /bin/config-server .
