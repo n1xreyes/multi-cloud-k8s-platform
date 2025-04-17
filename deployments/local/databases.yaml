@@ -16,7 +16,8 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:13-alpine
+          image: multi-cloud-k8s/postgres-custom:dev
+          imagePullPolicy: Never
           ports:
             - containerPort: 5432
           env:
@@ -41,6 +42,7 @@ spec:
     app: postgres
   ports:
     - port: 5432
+      name: postgres
       targetPort: 5432
   type: ClusterIP
 ---

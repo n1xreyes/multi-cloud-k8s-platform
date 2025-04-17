@@ -13,8 +13,11 @@ FROM alpine:3.18
 
 RUN apk update && apk --no-cache add ca-certificates
 
-WORKDIR /root/
+WORKDIR /root
 COPY --from=builder /bin/api-gateway .
+
+# Copy migrations
+COPY --from=builder /app/migrations /app/migrations
 
 EXPOSE 8080
 
