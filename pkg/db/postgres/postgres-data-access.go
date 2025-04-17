@@ -86,6 +86,36 @@ type User struct {
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
+// UserWithPassword represents credentials to the database
+type UserWithPassword struct {
+	User
+	PasswordHash string `db:"password_hash"`
+}
+
+func (c *Client) GetUserByUsernameWithPassword(ctx context.Context, username string) (*UserWithPassword, error) {
+	query := `
+		SELECT id, username, email, password_hash, first_name, last_name, created_at, updated_at
+		FROM users
+		WHERE username = $1
+	`
+
+	user := &UserWithPassword{}
+	err := c.db.QueryRowContext(ctx, query, username).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.PasswordHash,
+		&user.FirstName,
+		&user.LastName,
+		&user.CreatedAt,
+		&user.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
 // CreateUser creates a new user in the database
 func (c *Client) CreateUser(ctx context.Context, user *User, passwordHash string) error {
 	query := `
