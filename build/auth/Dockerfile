@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o auth-server ./cmd/api-gateway/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o auth-server ./cmd/auth/main.go
 
 # Use a small alpine image for the final image
 FROM alpine:3.18
